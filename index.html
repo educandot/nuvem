@@ -1,10 +1,9 @@
-```html
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Chuva Contínua - Apenas Letras e Números</title>
+    <title>Chuva de Letras - Chão Refletido com Respingos</title>
     <style>
         * {
             margin: 0;
@@ -145,7 +144,7 @@
         <button id="clearBtn">🗑️ LIMPAR</button>
     </div>
     <div class="info">
-        ▼ CHUVA CONTÍNUA | APENAS LETRAS E NÚMEROS ▼
+        ▼ CHUVA CONTÍNUA | CHÃO REFLETIDO | RESpingos ao bater ▼
     </div>
 </div>
 
@@ -154,20 +153,21 @@
         const canvas = document.getElementById('rainCanvas');
         let ctx = canvas.getContext('2d');
         
-        // Conjunto de caracteres: APENAS letras e números (sem caracteres especiais, sem vírgulas, sem pontos)
+        // Conjunto de caracteres: APENAS letras e números
         const CHARSET = [
-            // Letras maiúsculas
             'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-            // Letras minúsculas
             'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z',
-            // Números
             '0','1','2','3','4','5','6','7','8','9'
         ];
         
         let particles = [];
+        let splashes = []; // Array para efeitos de respingo
         let animationId = null;
         let isRunning = true;
         let width, height;
+        
+        // Posição do chão (altura onde ocorre o reflexo e respingo)
+        let groundY = 0;
         
         // Posição da nuvem
         let cloudX = 0;
@@ -175,20 +175,20 @@
         let cloudWidth = 280;
         let cloudHeight = 150;
         
-        // Configurações da chuva - quantidade adequada para fluxo contínuo
-        const BASE_PARTICLE_COUNT = 95;  // Quantidade que mantém fluxo constante
+        // Configurações da chuva
+        const BASE_PARTICLE_COUNT = 85;
         let particleCount = BASE_PARTICLE_COUNT;
-        const BASE_SPEED = 1.4;
-        const SPEED_VARIATION = 1.7;
+        const BASE_SPEED = 1.5;
+        const SPEED_VARIATION = 1.8;
         const FONT_SIZE = 18;
         
-        // Cor em tons de branco/cinza
+        // Cor dos caracteres (branco/cinza)
         function getCharColor() {
-            const brightness = 200 + Math.floor(Math.random() * 55);
+            const brightness = 210 + Math.floor(Math.random() * 45);
             return `rgb(${brightness}, ${brightness}, ${brightness})`;
         }
         
-        // Classe da partícula
+        // Classe da partícula (gota/letra)
         class RainDrop {
             constructor(x, y, speed, char, color) {
                 this.x = x;
@@ -196,37 +196,138 @@
                 this.speed = speed;
                 this.char = char;
                 this.color = color;
-                this.isActive = true;
+                this.hasHitGround = false;
             }
             
-            update(heightLimit) {
+            update(heightLimit, groundLevel) {
+                const oldY = this.y;
                 this.y += this.speed;
-                // Quando sai da tela, renasce imediatamente na nuvem - garantindo fluxo contínuo
-                if (this.y > heightLimit) {
-                    this.respawn();
+                
+                // Verifica se bateu no chão
+                if (!this.hasHitGround && this.y >= groundLevel) {
+                    this.hasHitGround = true;
+                    this.y = groundLevel;
+                    // Cria efeito de respingo
+                    createSplash(this.x, this.y, this.char, this.color);
+                    return false; // Indica que deve ser removida
                 }
+                
+                // Se passou do chão ou saiu da tela, respawna
+                if (this.y > heightLimit + 50) {
+                    this.respawn(groundLevel);
+                }
+                return true;
             }
             
-            respawn() {
-                // Renasce sempre na posição da nuvem
+            respawn(groundLevel) {
                 const cloudLeft = cloudX - (cloudWidth / 2);
                 const cloudBaseY = cloudY + (cloudHeight * 0.45);
                 
                 this.x = cloudLeft + Math.random() * cloudWidth;
-                this.y = cloudBaseY - Math.random() * 15;
+                this.y = cloudBaseY - Math.random() * 20;
                 this.speed = BASE_SPEED + Math.random() * SPEED_VARIATION;
                 this.char = CHARSET[Math.floor(Math.random() * CHARSET.length)];
                 this.color = getCharColor();
+                this.hasHitGround = false;
             }
             
             draw(ctx, fontSize) {
                 ctx.font = `${fontSize}px 'Courier New', 'Fira Code', monospace`;
                 ctx.shadowBlur = 2;
-                ctx.shadowColor = 'rgba(255,255,255,0.4)';
+                ctx.shadowColor = 'rgba(255,255,255,0.3)';
                 ctx.fillStyle = this.color;
                 ctx.fillText(this.char, this.x, this.y);
                 ctx.shadowBlur = 0;
             }
+            
+            // Desenha o reflexo no chão (espelhado)
+            drawReflection(ctx, fontSize, groundLevel) {
+                if (this.y >= groundLevel - 5) return; // só desenha reflexo se ainda não bateu
+                const reflectionY = groundLevel + (groundLevel - this.y);
+                if (reflectionY > groundLevel && reflectionY < groundLevel + 40) {
+                    ctx.font = `${fontSize}px 'Courier New', 'Fira Code', monospace`;
+                    ctx.globalAlpha = 0.35;
+                    ctx.fillStyle = this.color;
+                    ctx.fillText(this.char, this.x, reflectionY);
+                    ctx.globalAlpha = 1.0;
+                }
+            }
+        }
+        
+        // Classe para efeito de respingo
+        class Splash {
+            constructor(x, y, char, color) {
+                this.x = x;
+                this.y = y;
+                this.char = char;
+                this.color = color;
+                this.life = 1.0; // vida de 0 a 1
+                this.size = FONT_SIZE;
+                this.particles = []; // pequenas partículas do respingo
+                
+                // Cria pequenas partículas ao redor
+                const particleCount = 5 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < particleCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 1 + Math.random() * 2.5;
+                    const vx = Math.cos(angle) * speed;
+                    const vy = Math.sin(angle) * speed - 1.5;
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: vx,
+                        vy: vy,
+                        life: 0.8,
+                        size: 8 + Math.random() * 6
+                    });
+                }
+            }
+            
+            update() {
+                this.life -= 0.03;
+                // Atualiza partículas do respingo
+                for (let i = 0; i < this.particles.length; i++) {
+                    const p = this.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.2; // gravidade
+                    p.life -= 0.025;
+                }
+                // Remove partículas mortas
+                this.particles = this.particles.filter(p => p.life > 0 && p.y < groundY + 80);
+                return this.life > 0 || this.particles.length > 0;
+            }
+            
+            draw(ctx) {
+                // Desenha o caractere principal do respingo (fade out)
+                if (this.life > 0) {
+                    ctx.font = `${this.size * (0.6 + this.life * 0.4)}px 'Courier New', 'Fira Code', monospace`;
+                    ctx.globalAlpha = this.life * 0.7;
+                    ctx.fillStyle = this.color;
+                    ctx.fillText(this.char, this.x - 5, this.y - 8);
+                }
+                
+                // Desenha partículas do respingo
+                for (const p of this.particles) {
+                    ctx.font = `${p.size}px monospace`;
+                    ctx.globalAlpha = p.life * 0.8;
+                    ctx.fillStyle = `rgb(220, 220, 220)`;
+                    const symbols = ['*', '•', '°', '·', '✧', '+'];
+                    const sym = symbols[Math.floor(Math.random() * symbols.length)];
+                    ctx.fillText(sym, p.x, p.y);
+                }
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        
+        // Função para criar respingo
+        function createSplash(x, y, char, color) {
+            splashes.push(new Splash(x, y, char, color));
+        }
+        
+        // Atualiza posição do chão (80% da altura da tela)
+        function updateGroundPosition() {
+            groundY = height * 0.82;
         }
         
         // Atualiza posição da nuvem
@@ -242,10 +343,11 @@
             }
         }
         
-        // Inicializa todas as partículas
+        // Inicializa partículas
         function initParticles() {
             particles = [];
             updateCloudPosition();
+            updateGroundPosition();
             
             const cloudLeft = cloudX - (cloudWidth / 2);
             const cloudBaseY = cloudY + (cloudHeight * 0.45);
@@ -260,28 +362,70 @@
             }
         }
         
-        // Variável para controlar o último tempo de atualização e garantir fluxo suave
-        let lastTimestamp = 0;
+        // Desenha o chão com efeito reflexivo
+        function drawGround() {
+            // Gradiente do chão (superfície brilhante)
+            const gradient = ctx.createLinearGradient(0, groundY - 15, 0, groundY + 5);
+            gradient.addColorStop(0, 'rgba(80, 80, 100, 0.3)');
+            gradient.addColorStop(0.7, 'rgba(150, 150, 170, 0.5)');
+            gradient.addColorStop(1, 'rgba(200, 200, 220, 0.6)');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, groundY - 3, width, 8);
+            
+            // Linha brilhante do horizonte
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(width, groundY);
+            ctx.stroke();
+            
+            // Efeito de brilho no chão
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.fillRect(0, groundY + 2, width, 12);
+            
+            // Pequenos reflexos especulares (partículas de luz)
+            for (let i = 0; i < 30; i++) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.1 + Math.random() * 0.2})`;
+                ctx.fillRect(Math.random() * width, groundY + 2 + Math.random() * 10, 1, 1);
+            }
+        }
         
-        // Atualiza e desenha o canvas com efeito de rastro leve
+        // Desenha reflexos das letras no chão (espelhado)
+        function drawReflections() {
+            for (let p of particles) {
+                if (!p.hasHitGround && p.y < groundY - 5) {
+                    p.drawReflection(ctx, FONT_SIZE, groundY);
+                }
+            }
+        }
+        
+        // Atualiza e desenha tudo
         function updateRain() {
             if (!ctx) return;
             
-            // Fundo preto com fade suave - cria efeito de movimento contínuo
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+            // Fundo preto
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
             ctx.fillRect(0, 0, width, height);
             
-            // Atualiza posição da nuvem (caso tenha redimensionado)
+            // Atualiza posições
             updateCloudPosition();
+            updateGroundPosition();
             
-            // Atualiza e desenha todas as partículas
+            // Atualiza partículas e remove as que bateram no chão
+            const newParticles = [];
             for (let p of particles) {
-                p.update(height);
-                p.draw(ctx, FONT_SIZE);
+                const keep = p.update(height, groundY);
+                if (keep) {
+                    newParticles.push(p);
+                }
             }
+            particles = newParticles;
             
-            // Garantir que sempre haja partículas ativas - se por algum motivo alguma sumir, repõe
-            if (particles.length < BASE_PARTICLE_COUNT - 5) {
+            // Garante número mínimo de partículas
+            if (particles.length < BASE_PARTICLE_COUNT - 10) {
                 const cloudLeft = cloudX - (cloudWidth / 2);
                 const cloudBaseY = cloudY + (cloudHeight * 0.45);
                 const needed = BASE_PARTICLE_COUNT - particles.length;
@@ -294,6 +438,40 @@
                     particles.push(new RainDrop(x, y, speed, char, color));
                 }
             }
+            
+            // Desenha reflexos (antes das letras para ficar atrás? vamos desenhar antes das letras principais para efeito de reflexo no chão)
+            drawReflections();
+            
+            // Desenha as letras caindo
+            for (let p of particles) {
+                p.draw(ctx, FONT_SIZE);
+            }
+            
+            // Desenha o chão (por cima do reflexo mas com transparência)
+            drawGround();
+            
+            // Atualiza e desenha respingos
+            for (let i = 0; i < splashes.length; i++) {
+                const splash = splashes[i];
+                const alive = splash.update();
+                splash.draw(ctx);
+                if (!alive) {
+                    splashes.splice(i, 1);
+                    i--;
+                }
+            }
+            
+            // Efeito de brilho adicional no chão onde os respingos ocorrem
+            ctx.globalCompositeOperation = 'lighter';
+            for (let splash of splashes) {
+                if (splash.life > 0.3) {
+                    ctx.beginPath();
+                    ctx.arc(splash.x, groundY + 3, 8 * splash.life, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(200, 200, 255, ${splash.life * 0.2})`;
+                    ctx.fill();
+                }
+            }
+            ctx.globalCompositeOperation = 'source-over';
         }
         
         function animate() {
@@ -328,8 +506,9 @@
         }
         
         function clearAndReset() {
-            // Reinicia todas as partículas com novas posições
+            splashes = [];
             updateCloudPosition();
+            updateGroundPosition();
             const cloudLeft = cloudX - (cloudWidth / 2);
             const cloudBaseY = cloudY + (cloudHeight * 0.45);
             
@@ -339,6 +518,7 @@
                 p.char = CHARSET[Math.floor(Math.random() * CHARSET.length)];
                 p.color = getCharColor();
                 p.speed = BASE_SPEED + Math.random() * SPEED_VARIATION;
+                p.hasHitGround = false;
             }
             
             if (!isRunning && ctx) {
@@ -347,6 +527,7 @@
                 for (let p of particles) {
                     p.draw(ctx, FONT_SIZE);
                 }
+                drawGround();
             }
         }
         
@@ -356,14 +537,12 @@
         let extraParticles = [];
         
         function boostFromCloud() {
-            // Acelera levemente as partículas existentes
             for (let p of particles) {
-                p.speed += 0.5;
-                if (p.speed > 3.8) p.speed = 3.8;
+                p.speed += 0.6;
+                if (p.speed > 4.0) p.speed = 4.0;
             }
             
-            // Adiciona partículas extras temporárias
-            const extraCount = 35;
+            const extraCount = 30;
             extraParticles = [];
             updateCloudPosition();
             const cloudLeft = cloudX - (cloudWidth / 2);
@@ -372,7 +551,7 @@
             for (let i = 0; i < extraCount; i++) {
                 let x = cloudLeft + Math.random() * cloudWidth;
                 let y = cloudBaseY - Math.random() * 12;
-                let speed = BASE_SPEED + 0.8 + Math.random() * 1.4;
+                let speed = BASE_SPEED + 0.9 + Math.random() * 1.5;
                 let char = CHARSET[Math.floor(Math.random() * CHARSET.length)];
                 let color = getCharColor();
                 let newDrop = new RainDrop(x, y, speed, char, color);
@@ -381,7 +560,6 @@
             }
             particleCount = particles.length;
             
-            // Restaura após 2 segundos
             if (turboTimeout) clearTimeout(turboTimeout);
             turboTimeout = setTimeout(() => {
                 if (extraParticles.length > 0) {
@@ -397,7 +575,6 @@
                 turboTimeout = null;
             }, 2000);
             
-            // Feedback visual
             const cloudDiv = document.querySelector('.cloud');
             if (cloudDiv) {
                 cloudDiv.style.transform = 'translateX(-50%) scale(1.03)';
@@ -415,15 +592,18 @@
             canvas.height = height;
             
             updateCloudPosition();
+            updateGroundPosition();
             
             if (particles.length > 0) {
                 const cloudLeft = cloudX - (cloudWidth / 2);
                 const cloudBaseY = cloudY + (cloudHeight * 0.45);
                 
                 for (let p of particles) {
-                    p.x = cloudLeft + Math.random() * cloudWidth;
-                    p.y = cloudBaseY - Math.random() * 20;
-                    if (p.y > height) p.y = cloudBaseY - 5;
+                    if (p.y > groundY) {
+                        p.x = cloudLeft + Math.random() * cloudWidth;
+                        p.y = cloudBaseY - Math.random() * 20;
+                        p.hasHitGround = false;
+                    }
                 }
             } else {
                 initParticles();
@@ -435,10 +615,11 @@
                 for (let p of particles) {
                     p.draw(ctx, FONT_SIZE);
                 }
+                drawGround();
             }
         }
         
-        // Mantém as partículas sempre originando da nuvem
+        // Validador de origem
         function validateParticlesOrigin() {
             if (!particles.length) return;
             updateCloudPosition();
@@ -450,6 +631,7 @@
                 if (p.y < cloudBaseY - 50 || p.x < cloudLeft - 40 || p.x > cloudRight + 40) {
                     p.x = cloudLeft + Math.random() * cloudWidth;
                     p.y = cloudBaseY - Math.random() * 15;
+                    p.hasHitGround = false;
                 }
             }
         }
@@ -465,7 +647,6 @@
             }, 5000);
         }
         
-        // Configurar eventos
         function setupEventListeners() {
             const toggleBtn = document.getElementById('toggleBtn');
             const clearBtn = document.getElementById('clearBtn');
@@ -487,6 +668,7 @@
                     for (let p of particles) {
                         p.draw(ctx, FONT_SIZE);
                     }
+                    drawGround();
                 }
             });
         }
@@ -505,4 +687,3 @@
 </script>
 </body>
 </html>
-```
